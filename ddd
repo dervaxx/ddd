@@ -1,0 +1,38 @@
+local player = game.Players.LocalPlayer
+local gui = Instance.new("ScreenGui")
+local button = Instance.new("TextButton")
+
+button.Parent = gui
+gui.Parent = player.PlayerGui
+button.Size = UDim2.new(0, 200, 0, 50)
+button.Position = UDim2.new(0.5, -100, 0.5, -25)
+button.Text = "Rollback Trait"
+
+local savedData = nil
+
+local function saveState()
+    local data = {}
+    for _, v in pairs(player.Character:GetChildren()) do
+        if v:IsA("Tool") or v:IsA("Accessory") then
+            table.insert(data, v.Name)
+        end
+    end
+    return data
+end
+
+local function rollback()
+    if not savedData then return end
+    game:GetService("TeleportService"):Teleport(game.PlaceId, player)
+    wait(0.5)
+    for _, itemName in pairs(savedData) do
+        local item = game:GetService("ReplicatedStorage"):FindFirstChild(itemName)
+        if item then
+            item:Clone().Parent = player.Backpack
+        end
+    end
+end
+
+button.MouseButton1Click:Connect(function()
+    savedData = saveState()
+    rollback()
+end)
