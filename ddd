@@ -1,16 +1,144 @@
 local player = game.Players.LocalPlayer
-local remoteEvent = game:GetService("ReplicatedStorage"):FindFirstChild("SaveTraits")
+local gui = Instance.new("ScreenGui")
+local button = Instance.new("TextButton")
 
-local function interceptSave()
-    if remoteEvent then
-        local oldFunction = remoteEvent.OnClientEvent
-        remoteEvent.OnClientEvent = function(data)
-            if data and data.traits then
-                return
+gui.Parent = player.PlayerGui
+button.Parent = gui
+button.Size = UDim2.new(0, 200, 0, 50)
+button.Position = UDim2.new(0.5, -100, 0.5, -25)
+button.Text = "Activate Rollback"
+button.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+button.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+local rollbackActive = false
+
+local function getAllRemoteEvents()
+    local events = {}
+    local search = {
+        game:GetService("ReplicatedStorage"),
+        game:GetService("ReplicatedFirst"),
+        player:WaitForChild("PlayerScripts"),
+        player:WaitForChild("PlayerGui")
+    }
+    for _, container in pairs(search) do
+        for _, obj in pairs(container:GetDescendants()) do
+            if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+                table.insert(events, obj)
             end
-            oldFunction(data)
+        end
+    end
+    return events
+end
+
+local function findSaveEvents()
+    local events = getAllRemoteEvents()
+    local saveEvents = {}
+    local keywords = {"save", "Save", "data", "Data", "trait", "Trait", "character", "Character", "update", "Update", "sync", "Sync"}
+    for _, event in pairs(events) do
+        local name = event.Name
+        local path = string.lower(event:GetFullName())
+        for _, keyword in pairs(keywords) do
+            if string.find(name, keyword) or string.find(path, keyword) then
+                table.insert(saveEvents, event)
+                break
+            end
+        end
+    end
+    return saveEvents
+end
+
+local function interceptRemote(event)
+    if not event then return end
+    local oldEvent = event.OnClientEvent
+    local oldInvoke = event.OnClientInvoke
+    if event:IsA("RemoteEvent") then
+        event.OnClientEvent = function(...)
+            if rollbackActive then
+                local args = {...}
+                local blocked = false
+                for _, arg in pairs(args) do
+                    if type(arg) == "table" then
+                        for k, v in pairs(arg) do
+                            if type(k) == "string" and (string.find(string.lower(k), "trait") or string.find(string.lower(k), "stat") or string.find(string.lower(k), "level") or string.find(string.lower(k), "exp")) then
+                                blocked = true
+                                break
+                            end
+                            if type(v) == "table" then
+                                for sk, sv in pairs(v) do
+                                    if type(sk) == "string" and (string.find(string.lower(sk), "trait") or string.find(string.lower(sk), "stat")) then
+                                        blocked = true
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    if blocked then break end
+                end
+                if blocked then
+                    return
+                end
+            end
+            oldEvent(...)
+        end
+    elseif event:IsA("RemoteFunction") then
+        event.OnClientInvoke = function(...)
+            if rollbackActive then
+                local args = {...}
+                local blocked = false
+                for _, arg in pairs(args) do
+                    if type(arg) == "table" then
+                        for k, v in pairs(arg) do
+                            if type(k) == "string" and (string.find(string.lower(k), "trait") or string.find(string.lower(k), "stat") or string.find(string.lower(k), "level") or string.find(string.lower(k), "exp")) then
+                                blocked = true
+                                break
+                            end
+                        end
+                    end
+                    if blocked then break end
+                end
+                if blocked then
+                    return nil
+                end
+            end
+            return oldInvoke(...)
         end
     end
 end
 
-interceptSave()
+local function hookAllRemotes()
+    local events = findSaveEvents()
+    for _, event in pairs(events) do
+        interceptRemote(event)
+    end
+end
+
+local function teleportRollback()
+    game:GetService("TeleportService"):Teleport(game.PlaceId, player)
+end
+
+button.MouseButton1Click:Connect(function()
+    rollbackActive = not rollbackActive
+    if rollbackActive then
+        button.Text = "Rollback Active"
+        button.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+        hookAllRemotes()
+    else
+        button.Text = "Activate Rollback"
+        button.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+    end
+end)
+
+local reloadButton = Instance.new("TextButton")
+reloadButton.Parent = gui
+reloadButton.Size = UDim2.new(0, 200, 0, 50)
+reloadButton.Position = UDim2.new(0.5, -100, 0.5, -80)
+reloadButton.Text = "Teleport & Rollback"
+reloadButton.BackgroundColor3 = Color3.fromRGB(0, 0, 255)
+reloadButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+reloadButton.MouseButton1Click:Connect(function()
+    teleportRollback()
+end)
+
+hookAllRemotes()
